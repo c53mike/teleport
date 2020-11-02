@@ -31,5 +31,5 @@ func main() {
 		&common.TopCommand{},
 		&common.AccessRequestCommand{},
 	}
-	common.Run(commands)
+	common.Run(commands, nil)
 }
