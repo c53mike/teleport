@@ -397,6 +397,11 @@ func newTeleportProcess(cfg *Config) (Process, error) {
 // Run starts teleport processes, waits for signals
 // and handles internal process reloads.
 func Run(ctx context.Context, cfg Config, newTeleport NewProcess) error {
+	// GRPC client logs are very verbose,
+	// so only turn them on with any level only in debug mode
+	if cfg.Debug {
+		setDebugGRPCLogger(log.Logger.WriterLevel(logrus.DebugLevel))
+	}
 	if newTeleport == nil {
 		newTeleport = newTeleportProcess
 	}
@@ -1488,6 +1493,7 @@ func (process *TeleportProcess) initSSH() error {
 	var conn *Connector
 	var ebpf bpf.BPF
 	var s *regular.Server
+	var asyncEmitter *events.AsyncEmitter
 
 	process.RegisterCriticalFunc("ssh.node", func() error {
 		var ok bool
@@ -1584,6 +1590,15 @@ func (process *TeleportProcess) initSSH() error {
 			return trace.Wrap(err)
 		}
 
+		// asyncEmitter makes sure that sessions do not block
+		// in case if connections are slow
+		asyncEmitter, err = events.NewAsyncEmitter(events.AsyncEmitterConfig{
+			Inner: emitter,
+		})
+		if err != nil {
+			return trace.Wrap(err)
+		}
+
 		streamer, err := events.NewCheckingStreamer(events.CheckingStreamerConfig{
 			Inner: conn.Client,
 			Clock: process.Clock,
@@ -1601,7 +1616,7 @@ func (process *TeleportProcess) initSSH() error {
 			process.proxyPublicAddr(),
 			regular.SetLimiter(limiter),
 			regular.SetShell(cfg.SSH.Shell),
-			regular.SetEmitter(&events.StreamerAndEmitter{Emitter: emitter, Streamer: streamer}),
+			regular.SetEmitter(&events.StreamerAndEmitter{Emitter: asyncEmitter, Streamer: streamer}),
 			regular.SetSessionServer(conn.Client),
 			regular.SetLabels(cfg.SSH.Labels, cfg.SSH.CmdLabels),
 			regular.SetNamespace(namespace),
@@ -1715,6 +1730,10 @@ func (process *TeleportProcess) initSSH() error {
 		if ebpf != nil {
 			// Close BPF service.
 			warnOnErr(ebpf.Close())
+		}
+
+		if asyncEmitter != nil {
+			warnOnErr(asyncEmitter.Close())
 		}
 
 		log.Infof("Exited.")
@@ -2205,6 +2224,15 @@ func (process *TeleportProcess) initProxyEndpoint(conn *Connector) error {
 		return trace.Wrap(err)
 	}
 
+	// asyncEmitter makes sure that sessions do not block
+	// in case if connections are slow
+	asyncEmitter, err := events.NewAsyncEmitter(events.AsyncEmitterConfig{
+		Inner: emitter,
+	})
+	if err != nil {
+		return trace.Wrap(err)
+	}
+
 	streamer, err := events.NewCheckingStreamer(events.CheckingStreamerConfig{
 		Inner: conn.Client,
 		Clock: process.Clock,
@@ -2242,7 +2270,7 @@ func (process *TeleportProcess) initProxyEndpoint(conn *Connector) error {
 				DataDir:       process.Config.DataDir,
 				PollingPeriod: process.Config.PollingPeriod,
 				FIPS:          cfg.FIPS,
-				Emitter:       &events.StreamerAndEmitter{Emitter: emitter, Streamer: streamer},
+				Emitter:       &events.StreamerAndEmitter{Emitter: asyncEmitter, Streamer: streamer},
 			})
 		if err != nil {
 			return trace.Wrap(err)
@@ -2366,7 +2394,7 @@ func (process *TeleportProcess) initProxyEndpoint(conn *Connector) error {
 				process.BroadcastEvent(Event{Name: TeleportOKEvent, Payload: teleport.ComponentProxy})
 			}
 		}),
-		regular.SetEmitter(&events.StreamerAndEmitter{Emitter: emitter, Streamer: streamer}),
+		regular.SetEmitter(&events.StreamerAndEmitter{Emitter: asyncEmitter, Streamer: streamer}),
 		regular.SetKubernetesClusters(kubeClusterNames),
 	)
 	if err != nil {
@@ -2430,6 +2458,7 @@ func (process *TeleportProcess) initProxyEndpoint(conn *Connector) error {
 				Tunnel:          tsrv,
 				Auth:            authorizer,
 				Client:          conn.Client,
+				StreamEmitter:   &events.StreamerAndEmitter{Emitter: asyncEmitter, Streamer: streamer},
 				DataDir:         cfg.DataDir,
 				AccessPoint:     accessPoint,
 				ServerID:        cfg.HostUUID,
@@ -2468,6 +2497,9 @@ func (process *TeleportProcess) initProxyEndpoint(conn *Connector) error {
 		// several times.
 		if listeners.kube != nil {
 			listeners.kube.Close()
+		}
+		if asyncEmitter != nil {
+			warnOnErr(asyncEmitter.Close())
 		}
 		if payload == nil {
 			log.Infof("Shutting down immediately.")

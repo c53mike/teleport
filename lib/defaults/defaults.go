@@ -373,6 +373,9 @@ var (
 	// connections. These pings are needed to avoid timeouts on load balancers
 	// that don't respect TCP keep-alives.
 	SPDYPingPeriod = 30 * time.Second
+
+	// AsyncBufferSize is a default buffer size for async emitters
+	AsyncBufferSize = 1024
 )
 
 // Default connection limits, they can be applied separately on any of the Teleport
