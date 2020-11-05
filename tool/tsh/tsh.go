@@ -343,6 +343,9 @@ func Run(args []string) {
 	// about the certificate.
 	status := app.Command("status", "Display the list of proxy servers and retrieved certificates")
 
+	// Kubernetes subcommands.
+	kube := newKubeCommand(app)
+
 	// On Windows, hide the "ssh", "join", "play", "scp", and "bench" commands
 	// because they all use a terminal.
 	if runtime.GOOS == teleport.WindowsOS {
@@ -411,6 +414,11 @@ func Run(args []string) {
 		onStatus(&cf)
 	case lsApps.FullCommand():
 		onApps(&cf)
+	case kube.credentials.FullCommand():
+		err = kube.credentials.run(&cf)
+	}
+	if err != nil {
+		utils.FatalError(err)
 	}
 }
 
@@ -491,7 +499,7 @@ func onLogin(cf *CLIConf) {
 			if err := tc.SaveProfile("", true); err != nil {
 				utils.FatalError(err)
 			}
-			if err := kubeconfig.UpdateWithClient("", tc); err != nil {
+			if err := kubeconfig.UpdateWithClient(cf.Context, "", tc, os.Args[0]); err != nil {
 				utils.FatalError(err)
 			}
 			onStatus(cf)
@@ -550,7 +558,7 @@ func onLogin(cf *CLIConf) {
 
 	// If the proxy is advertising that it supports Kubernetes, update kubeconfig.
 	if tc.KubeProxyAddr != "" {
-		if err := kubeconfig.UpdateWithClient("", tc); err != nil {
+		if err := kubeconfig.UpdateWithClient(cf.Context, "", tc, os.Args[0]); err != nil {
 			utils.FatalError(err)
 		}
 	}
@@ -1602,7 +1610,7 @@ func reissueWithRequests(cf *CLIConf, tc *client.TeleportClient, reqIDs ...strin
 	if err := tc.SaveProfile("", true); err != nil {
 		return trace.Wrap(err)
 	}
-	if err := kubeconfig.UpdateWithClient("", tc); err != nil {
+	if err := kubeconfig.UpdateWithClient(cf.Context, "", tc, os.Args[0]); err != nil {
 		return trace.Wrap(err)
 	}
 	return nil

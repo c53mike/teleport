@@ -169,7 +169,7 @@ func (s *KubeconfigSuite) TestUpdate(c *check.C) {
 	creds, caCertPEM, err := s.genUserKey()
 	c.Assert(err, check.IsNil)
 	err = Update(s.kubeconfigPath, Values{
-		Name:        clusterName,
+		TeleportClusterName:        clusterName,
 		ClusterAddr: clusterAddr,
 		Credentials: creds,
 	})
@@ -211,7 +211,7 @@ func (s *KubeconfigSuite) TestRemove(c *check.C) {
 
 	// Add teleport-generated entries to kubeconfig.
 	err = Update(s.kubeconfigPath, Values{
-		Name:        clusterName,
+		TeleportClusterName:        clusterName,
 		ClusterAddr: clusterAddr,
 		Credentials: creds,
 	})
@@ -233,7 +233,7 @@ func (s *KubeconfigSuite) TestRemove(c *check.C) {
 
 	// Add teleport-generated entries to kubeconfig again.
 	err = Update(s.kubeconfigPath, Values{
-		Name:        clusterName,
+		TeleportClusterName:        clusterName,
 		ClusterAddr: clusterAddr,
 		Credentials: creds,
 	})
